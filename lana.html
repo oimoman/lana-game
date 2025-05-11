@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ラナちゃんのお散歩シューティング</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #87CEEB; /* 空色 */
+            font-family: 'Press Start 2P', cursive;
+            overflow: hidden;
+            padding-top: 10px; /* 上部の余白 */
+        }
+        h1 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #fff;
+            text-shadow: 2px 2px #333;
+        }
+        #gameContainer {
+            border: 5px solid #333;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            position: relative;
+            background-color: #f0f0f0;
+            width: 90%;
+            max-width: 400px; /* 縦型なので幅を狭く */
+            aspect-ratio: 9 / 16; /* 縦長の比率 */
+            touch-action: none; /* タッチ操作時のブラウザデフォルト動作を無効化 */
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background-color: #90EE90; /* 薄緑色 - 田んぼのイメージ */
+            border-radius: 5px;
+        }
+        #uiContainer {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            width: 90%;
+            max-width: 400px;
+            padding: 10px;
+            background-color: rgba(0,0,0,0.7);
+            border-radius: 10px;
+            color: white;
+            margin-top: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            font-size: 0.8em; /* 少し小さく */
+        }
+        #uiContainer div {
+            text-align: center;
+        }
+        .button-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 15px;
+            width: 90%;
+            max-width: 400px;
+        }
+        button {
+            background-color: #FF69B4; /* ピンク */
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.9em;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px #c71585;
+            transition: all 0.1s ease;
+            margin: 0 5px;
+            flex-grow: 1; /* ボタンを均等に配置 */
+        }
+        button:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px #c71585;
+        }
+        #messageOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-size: 1.2em;
+            z-index: 10;
+            border-radius: 5px;
+            padding: 10px;
+        }
+        #messageOverlay button {
+            margin-top: 15px;
+            font-size: 0.8em;
+            padding: 10px 15px;
+        }
+         /* 操作ボタン用のコンテナ */
+        #controlsContainer {
+            display: flex;
+            justify-content: space-between; /* 左右に配置 */
+            width: 90%;
+            max-width: 400px;
+            margin-top: 10px;
+        }
+
+        #controlsContainer button {
+            width: 48%; /* 幅を調整して間にスペースを確保 */
+        }
+
+
+        /* スマートフォン向けのスタイル調整 */
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 1.2em;
+            }
+            #uiContainer {
+                font-size: 0.7em;
+                padding: 8px;
+            }
+            button {
+                padding: 8px 15px;
+                font-size: 0.8em;
+            }
+            #messageOverlay {
+                font-size: 1em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>ラナちゃん<br>お散歩シューティング</h1>
+
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="messageOverlay">
+            <p id="messageText"></p>
+            <button id="restartButton">もう一度遊ぶ</button>
+        </div>
+    </div>
+
+    <div id="uiContainer">
+        <div>スコア: <span id="score">0</span></div>
+        <div>体力: <span id="health">100</span></div>
+        <div>進んだ敵: <span id="enemiesPassed">0</span></div>
+    </div>
+
+    <div id="controlsContainer">
+        <button id="leftButton">左へ</button>
+        <button id="rightButton">右へ</button>
+    </div>
+    <div class="button-container">
+        <button id="barkButton">吠える！ (弾発射)</button>
+    </div>
+
+    <script>
+        // --- ゲーム設定 ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameContainer = document.getElementById('gameContainer');
+
+        function resizeCanvas() {
+            const aspectRatio = 9 / 16;
+            const maxWidth = 400;
+            const maxHeight = window.innerHeight * 0.6; // 画面高さの60%を最大とする
+
+            let newWidth = Math.min(maxWidth, window.innerWidth * 0.9);
+            let newHeight = newWidth / aspectRatio;
+
+            if (newHeight > maxHeight) {
+                newHeight = maxHeight;
+                newWidth = newHeight * aspectRatio;
+            }
+
+            gameContainer.style.width = `${newWidth}px`;
+            gameContainer.style.height = `${newHeight}px`;
+            canvas.width = newWidth;
+            canvas.height = newHeight;
+
+            // ゲーム要素の再配置や再描画
+            if (typeof lana !== 'undefined') { // lanaが定義されていれば
+                lana.x = canvas.width / 2 - lana.width / 2; // 中央に再配置
+                lana.y = canvas.height - lana.height - 20; // 下部に再配置
+                lana.groundY = canvas.height - lana.height - 20;
+            }
+            if (typeof drawGame === 'function' && gameRunning) {
+                 drawGame();
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+
+        // UI要素
+        const scoreDisplay = document.getElementById('score');
+        const healthDisplay = document.getElementById('health');
+        const enemiesPassedDisplay = document.getElementById('enemiesPassed'); // 画面下部を通過した敵の数
+        const barkButton = document.getElementById('barkButton');
+        const leftButton = document.getElementById('leftButton');
+        const rightButton = document.getElementById('rightButton');
+        const messageOverlay = document.getElementById('messageOverlay');
+        const messageText = document.getElementById('messageText');
+        const restartButton = document.getElementById('restartButton');
+
+        // --- ゲーム変数 ---
+        let score = 0;
+        let health = 100;
+        let enemiesPassedCount = 0; // 通過した敵のカウント
+        const maxEnemiesPassed = 10; // これを超えたらゲームオーバーにするなど
+        let gameSpeed = 1;
+        let gameRunning = false;
+        let shootCooldown = 0;
+        const shootCooldownTime = 20; // フレーム単位 (約0.33秒)
+
+        // プレイヤー（ラナちゃん）
+        const lana = {
+            x: 0, // 初期X (resizeCanvasで設定)
+            y: 0, // 初期Y (resizeCanvasで設定)
+            width: 45,
+            height: 45,
+            // 色を黒と白ベースに変更
+            mainColor: '#333333', // 黒に近い色
+            secondColor: '#FFFFFF', // 白
+            accentColor: '#F0E68C', // 淡い黄色 (タン)
+            speed: 5,
+            groundY: 0
+        };
+
+        // 弾の配列
+        let bullets = [];
+        const bulletSpeed = 7;
+        const bulletWidth = 8;
+        const bulletHeight = 15;
+        const bulletColor = '#FFD700'; // 黄色
+
+        // 敵キャラクターの配列
+        let enemies = [];
+        const enemyTypes = [
+            { type: 'frog', baseColor: '#228B22', width: 35, height: 25, speedMultiplier: 1.2, damage: 15, score: 10, emoji: '🐸' },
+            { type: 'old_man', baseColor: '#708090', width: 45, height: 65, speedMultiplier: 0.8, damage: 25, score: 20, emoji: '👴' }
+        ];
+
+        // アイテムの配列
+        let items = [];
+        const itemTypes = [
+            { type: 'food', color: '#FF8C00', width: 25, height: 25, healthBoost: 20, emoji: '🍖' },
+            { type: 'seal_plushie', color: '#ADD8E6', width: 30, height: 30, scoreBoost: 50, emoji: '🧸' }
+        ];
+
+        // --- 初期化処理 ---
+        function initGame() {
+            score = 0;
+            health = 100;
+            enemiesPassedCount = 0;
+            gameSpeed = 1;
+            enemies = [];
+            items = [];
+            bullets = [];
+            shootCooldown = 0;
+
+            resizeCanvas(); // ここでラナの位置も設定される
+
+            updateUI();
+            messageOverlay.style.display = 'none';
+            gameRunning = true;
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            gameLoop();
+        }
+
+        // --- 描画処理 ---
+        function drawLana() {
+            // 体 (黒)
+            ctx.fillStyle = lana.mainColor;
+            ctx.beginPath();
+            ctx.ellipse(lana.x + lana.width / 2, lana.y + lana.height * 0.6, lana.width / 2, lana.height * 0.4, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 顔周りの毛 (白)
+            ctx.fillStyle = lana.secondColor;
+            ctx.beginPath();
+            ctx.ellipse(lana.x + lana.width / 2, lana.y + lana.height * 0.35, lana.width * 0.45, lana.height * 0.3, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 耳 (黒) - 三角形
+            ctx.fillStyle = lana.mainColor;
+            ctx.beginPath();
+            ctx.moveTo(lana.x + lana.width * 0.2, lana.y + lana.height * 0.1);
+            ctx.lineTo(lana.x + lana.width * 0.1, lana.y - lana.height * 0.1);
+            ctx.lineTo(lana.x + lana.width * 0.3, lana.y);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(lana.x + lana.width * 0.8, lana.y + lana.height * 0.1);
+            ctx.lineTo(lana.x + lana.width * 0.9, lana.y - lana.height * 0.1);
+            ctx.lineTo(lana.x + lana.width * 0.7, lana.y);
+            ctx.closePath();
+            ctx.fill();
+
+            // 目 (黒)
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.arc(lana.x + lana.width * 0.35, lana.y + lana.height * 0.3, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(lana.x + lana.width * 0.65, lana.y + lana.height * 0.3, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 鼻 (黒)
+            ctx.beginPath();
+            ctx.arc(lana.x + lana.width / 2, lana.y + lana.height * 0.4, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // タン模様 (眉)
+            ctx.fillStyle = lana.accentColor;
+            ctx.beginPath();
+            ctx.arc(lana.x + lana.width * 0.35, lana.y + lana.height * 0.2, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(lana.x + lana.width * 0.65, lana.y + lana.height * 0.2, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawBullets() {
+            ctx.fillStyle = bulletColor;
+            bullets.forEach(bullet => {
+                // ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                // 弾を少し格好良く
+                ctx.beginPath();
+                ctx.moveTo(bullet.x + bullet.width / 2, bullet.y);
+                ctx.lineTo(bullet.x, bullet.y + bullet.height);
+                ctx.lineTo(bullet.x + bullet.width, bullet.y + bullet.height);
+                ctx.closePath();
+                ctx.fill();
+            });
+        }
+
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                // ctx.fillStyle = enemy.baseColor;
+                // ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                ctx.font = `${enemy.height * 0.9}px Arial`;
+                ctx.fillText(enemy.emoji, enemy.x, enemy.y + enemy.height * 0.8);
+            });
+        }
+
+        function drawItems() {
+            items.forEach(item => {
+                // ctx.fillStyle = item.color;
+                // ctx.fillRect(item.x, item.y, item.width, item.height);
+                ctx.font = `${item.height}px Arial`;
+                ctx.fillText(item.emoji, item.x, item.y + item.height * 0.8);
+            });
+        }
+
+        // 背景の畦道（縦スクロールっぽく見せる）
+        let roadOffset = 0;
+        const roadStripeHeight = 50;
+        const roadStripeColor1 = '#8B4513'; // 土
+        const roadStripeColor2 = '#A0522D'; // 少し明るい土
+
+        function drawBackground() {
+            // 空
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 田んぼの畦道（縦に流れるように）
+            roadOffset = (roadOffset + gameSpeed * 0.5) % (roadStripeHeight * 2);
+
+            for (let y = -roadStripeHeight * 2 + roadOffset; y < canvas.height; y += roadStripeHeight * 2) {
+                ctx.fillStyle = roadStripeColor1;
+                ctx.fillRect(canvas.width * 0.2, y, canvas.width * 0.6, roadStripeHeight);
+                ctx.fillStyle = roadStripeColor2;
+                ctx.fillRect(canvas.width * 0.2, y + roadStripeHeight, canvas.width * 0.6, roadStripeHeight);
+            }
+
+            // 遠景の草
+            ctx.fillStyle = '#2E8B57'; // シーグリーン
+            ctx.fillRect(0, canvas.height - 30, canvas.width * 0.2, 30);
+            ctx.fillRect(canvas.width * 0.8, canvas.height - 30, canvas.width * 0.2, 30);
+        }
+
+
+        // --- 更新処理 ---
+        function updateLana() {
+            if (shootCooldown > 0) shootCooldown--;
+        }
+
+        function updateBullets() {
+            bullets.forEach((bullet, index) => {
+                bullet.y -= bulletSpeed;
+                if (bullet.y + bullet.height < 0) {
+                    bullets.splice(index, 1);
+                }
+            });
+        }
+
+        function updateEnemies() {
+            enemies.forEach((enemy, index) => {
+                enemy.y += gameSpeed * enemy.speedMultiplier;
+                if (enemy.y > canvas.height) {
+                    enemies.splice(index, 1);
+                    enemiesPassedCount++; // 敵が画面下を通過
+                    if (enemiesPassedCount >= maxEnemiesPassed && health > 0) { // 体力があっても一定数通過でゲームオーバー
+                        // gameOver("たくさんの敵を見逃しちゃった！"); // カスタムメッセージ
+                        health -= enemy.damage * 0.5; // 通過ペナルティ
+                        if (health <= 0) gameOver("たくさんの敵を見逃しちゃった！");
+                    }
+                }
+
+                // 衝突判定: ラナちゃん vs 敵
+                if (
+                    lana.x < enemy.x + enemy.width &&
+                    lana.x + lana.width > enemy.x &&
+                    lana.y < enemy.y + enemy.height &&
+                    lana.y + lana.height > enemy.y
+                ) {
+                    health -= enemy.damage;
+                    enemies.splice(index, 1);
+                    if (health <= 0) {
+                        gameOver("敵にぶつかっちゃった！");
+                    }
+                }
+
+                // 衝突判定: 弾 vs 敵
+                bullets.forEach((bullet, bulletIndex) => {
+                    if (
+                        bullet.x < enemy.x + enemy.width &&
+                        bullet.x + bullet.width > enemy.x &&
+                        bullet.y < enemy.y + enemy.height &&
+                        bullet.y + bullet.height > enemy.y
+                    ) {
+                        score += enemy.score;
+                        enemies.splice(index, 1);
+                        bullets.splice(bulletIndex, 1);
+                        // 敵を倒した時のエフェクトなど（オプション）
+                    }
+                });
+            });
+
+            // 新しい敵の生成
+            if (gameRunning && Math.random() < 0.012 * (1 + score / 2000)) { // スコアで出現率アップ
+                const typeIndex = Math.floor(Math.random() * enemyTypes.length);
+                const enemyType = enemyTypes[typeIndex];
+                enemies.push({
+                    ...enemyType,
+                    x: Math.random() * (canvas.width * 0.6 - enemyType.width) + canvas.width * 0.2, // 道の中に
+                    y: -enemyType.height,
+                });
+            }
+        }
+
+        function updateItems() {
+            items.forEach((item, index) => {
+                item.y += gameSpeed * 0.8; // アイテムは少しゆっくり
+                if (item.y > canvas.height) {
+                    items.splice(index, 1);
+                }
+
+                if (
+                    lana.x < item.x + item.width &&
+                    lana.x + lana.width > item.x &&
+                    lana.y < item.y + item.height &&
+                    lana.y + lana.height > item.y
+                ) {
+                    if (item.type === 'food') {
+                        health = Math.min(100, health + item.healthBoost);
+                    } else if (item.type === 'seal_plushie') {
+                        score += item.scoreBoost;
+                    }
+                    items.splice(index, 1);
+                }
+            });
+
+            if (gameRunning && Math.random() < 0.008) {
+                const typeIndex = Math.floor(Math.random() * itemTypes.length);
+                const itemType = itemTypes[typeIndex];
+                items.push({
+                    ...itemType,
+                    x: Math.random() * (canvas.width * 0.5 - itemType.width) + canvas.width * 0.25, // 道の少し内側
+                    y: -itemType.height,
+                });
+            }
+        }
+
+        function updateUI() {
+            scoreDisplay.textContent = score;
+            healthDisplay.textContent = Math.max(0, Math.round(health));
+            enemiesPassedDisplay.textContent = `${enemiesPassedCount}/${maxEnemiesPassed}`;
+        }
+
+        // --- ゲームロジック ---
+        function shoot() {
+            if (shootCooldown === 0 && gameRunning) {
+                bullets.push({
+                    x: lana.x + lana.width / 2 - bulletWidth / 2,
+                    y: lana.y - bulletHeight, // ラナちゃんの上から発射
+                    width: bulletWidth,
+                    height: bulletHeight
+                });
+                shootCooldown = shootCooldownTime;
+                // 発射音（オプション）
+            }
+        }
+
+        function gameOver(message = "ゲームオーバー！") {
+            gameRunning = false;
+            messageText.innerHTML = `${message}<br>最終スコア: ${score}<br>通過した敵: ${enemiesPassedCount}`;
+            messageOverlay.style.display = 'flex';
+        }
+
+        // --- ゲームループ ---
+        let animationFrameId;
+        function gameLoop() {
+            if (!gameRunning) {
+                return;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawBackground(); // 背景を先に描画
+
+            updateLana();
+            updateBullets();
+            updateEnemies();
+            updateItems();
+
+            // スコアは敵を倒した時のみ加算
+            // gameSpeed = 1 + score / 1000; // スコアに応じてスピードアップ
+
+            drawLana();
+            drawBullets();
+            drawEnemies();
+            drawItems();
+
+            updateUI();
+
+            if (health <= 0 && gameRunning) { // gameRunningチェックを追加
+                gameOver("体力がなくなっちゃった！");
+            }
+
+
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- イベントリスナー ---
+        function handleMove(direction) {
+            if (!gameRunning) return;
+            if (direction === 'left') {
+                lana.x = Math.max(canvas.width * 0.2, lana.x - lana.speed * 2); // 道から出ないように
+            } else if (direction === 'right') {
+                lana.x = Math.min(canvas.width * 0.8 - lana.width, lana.x + lana.speed * 2); // 道から出ないように
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning && e.key !== 'Enter' && e.key !== ' ') return; // ゲームオーバー中はEnterかSpaceでリスタートのみ受付
+
+            if (gameRunning) {
+                if (e.key === 'ArrowLeft' || e.key === 'a') {
+                    handleMove('left');
+                } else if (e.key === 'ArrowRight' || e.key === 'd') {
+                    handleMove('right');
+                } else if (e.key === ' ') {
+                    e.preventDefault();
+                    shoot();
+                }
+            } else if (messageOverlay.style.display === 'flex' && (e.key === 'Enter' || e.key === ' ')) {
+                 e.preventDefault(); // ボタンがフォーカスされている場合のデフォルト動作を防ぐ
+                 initGame();
+            }
+        });
+
+        barkButton.addEventListener('click', shoot);
+        leftButton.addEventListener('click', () => handleMove('left'));
+        rightButton.addEventListener('click', () => handleMove('right'));
+
+        // タッチ操作
+        let touchStartX = 0;
+        let touchCurrentX = 0;
+        const touchMoveThreshold = 10; // このピクセル以上動いたら移動とみなす
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (!gameRunning) return;
+            e.preventDefault();
+            touchStartX = e.touches[0].clientX;
+            touchCurrentX = touchStartX;
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!gameRunning) return;
+            e.preventDefault();
+            touchCurrentX = e.touches[0].clientX;
+            const diffX = touchCurrentX - touchStartX;
+            if (Math.abs(diffX) > touchMoveThreshold) {
+                if (diffX < 0) {
+                    handleMove('left');
+                } else {
+                    handleMove('right');
+                }
+                touchStartX = touchCurrentX; // 現在位置を次の開始点に
+            }
+        }, { passive: false });
+
+
+        restartButton.addEventListener('click', initGame);
+
+        // --- ゲーム開始 ---
+        window.onload = () => {
+            // resizeCanvas(); // initGame内で呼ばれるのでここでは不要かも
+            initGame();
+        };
+
+        function drawGame() { // リサイズ時に呼ばれる
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackground();
+            drawLana();
+            drawBullets();
+            drawEnemies();
+            drawItems();
+        }
+
+    </script>
+</body>
+</html>
